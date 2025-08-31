@@ -32,7 +32,42 @@ struct VirtualFileSystem {
 
 impl PartialEq<VirtualFileSystem> for VirtualFileSystem {
     fn eq(&self, rhs: &VirtualFileSystem) -> bool {
-        self.files == rhs.files && self.tree == rhs.tree
+        // Compare with line ending normalization
+        self.files_eq(&rhs.files) && self.tree == rhs.tree
+    }
+}
+
+impl VirtualFileSystem {
+    fn files_eq(&self, other: &BTreeMap<String, VirtualFile>) -> bool {
+        if self.files.len() != other.len() {
+            return false;
+        }
+        
+        for (key, value) in &self.files {
+            match other.get(key) {
+                Some(other_value) => {
+                    if !value.eq_normalized(other_value) {
+                        return false;
+                    }
+                }
+                None => return false,
+            }
+        }
+        true
+    }
+}
+
+impl VirtualFile {
+    fn eq_normalized(&self, other: &VirtualFile) -> bool {
+        match (&self.contents, &other.contents) {
+            (VirtualFileContents::Bytes(a), VirtualFileContents::Bytes(b)) => {
+                a.replace("\r\n", "\n") == b.replace("\r\n", "\n")
+            }
+            (VirtualFileContents::Vfs(a), VirtualFileContents::Vfs(b)) => {
+                a.files_eq(&b.files) && a.tree == b.tree
+            }
+            _ => self.contents == other.contents,
+        }
     }
 }
 
@@ -82,8 +117,13 @@ impl InstructionReader for VirtualFileSystem {
                             let tree = rbx_xml::from_str_default(&contents_string)
                                 .expect("couldn't decode encoded xml");
                             let child_id = tree.root().children()[0];
-                            let child_instance = tree.get_by_ref(child_id).unwrap().clone();
-                            VirtualFileContents::Instance(child_instance.properties.to_owned())
+                            let child_instance = tree.get_by_ref(child_id).unwrap();
+                            VirtualFileContents::Instance(
+                                child_instance.properties
+                                    .iter()
+                                    .map(|(k, v)| (k.to_string(), v.clone()))
+                                    .collect()
+                            )
                         } else {
                             VirtualFileContents::Bytes(contents_string)
                         },
