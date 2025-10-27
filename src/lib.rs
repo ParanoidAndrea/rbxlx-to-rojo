@@ -1,7 +1,7 @@
 use log::debug;
 use rbx_dom_weak::{
     types::{Ref, Variant},
-    Instance, WeakDom,
+    Instance, Ustr, WeakDom,
 };
 use std::{
     borrow::Cow,
@@ -50,7 +50,7 @@ fn repr_instance<'a>(
                         contents: Cow::Owned(
                             serde_json::to_string_pretty(&MetaFile {
                                 class_name: None,
-                                // properties: BTreeMap::new(),
+                                properties: None,
                                 ignore_unknown_instances: true,
                             })
                             .unwrap()
@@ -64,14 +64,18 @@ fn repr_instance<'a>(
         }
 
         "Script" | "LocalScript" | "ModuleScript" => {
-            let extension = match child.class.as_str() {
-                "Script" => ".server",
-                "LocalScript" => ".client",
-                "ModuleScript" => "",
-                _ => unreachable!(),
+            // Simple class-based extension logic
+            let extension = if child.class == "ModuleScript" {
+                ""
+            } else {
+                match child.class.as_str() {
+                    "Script" => ".server",
+                    "LocalScript" => ".client",
+                    _ => ".server",
+                }
             };
 
-            let source = match child.properties.get("Source").expect("no Source") {
+            let source = match child.properties.get(&Ustr::from("Source")).expect("no Source") {
                 Variant::String(value) => value,
                 _ => unreachable!(),
             }
@@ -80,7 +84,7 @@ fn repr_instance<'a>(
             if child.children().is_empty() {
                 Some((
                     vec![Instruction::CreateFile {
-                        filename: Cow::Owned(base.join(format!("{}{}.lua", child.name, extension))),
+                        filename: Cow::Owned(base.join(format!("{}{}.luau", child.name, extension))),
                         contents: Cow::Borrowed(source),
                     }],
                     Cow::Borrowed(base),
@@ -89,7 +93,7 @@ fn repr_instance<'a>(
                 let meta_contents = Cow::Owned(
                     serde_json::to_string_pretty(&MetaFile {
                         class_name: None,
-                        // properties: BTreeMap::new(),
+                        properties: None,
                         ignore_unknown_instances: true,
                     })
                     .expect("couldn't serialize meta")
@@ -118,7 +122,7 @@ fn repr_instance<'a>(
                             },
                             Instruction::CreateFile {
                                 filename: Cow::Owned(
-                                    folder_path.join(format!("init{}.lua", extension)),
+                                    folder_path.join(format!("init{}.luau", extension)),
                                 ),
                                 contents: Cow::Borrowed(source),
                             },
@@ -130,7 +134,7 @@ fn repr_instance<'a>(
                         vec![
                             Instruction::CreateFile {
                                 filename: Cow::Owned(
-                                    base.join(format!("{}{}.lua", child.name, extension)),
+                                    base.join(format!("{}{}.luau", child.name, extension)),
                                 ),
                                 contents: Cow::Borrowed(source),
                             },
@@ -151,7 +155,7 @@ fn repr_instance<'a>(
                             },
                             Instruction::CreateFile {
                                 filename: Cow::Owned(
-                                    folder_path.join(format!("init{}.lua", extension)),
+                                    folder_path.join(format!("init{}.luau", extension)),
                                 ),
                                 contents: Cow::Borrowed(source),
                             },
@@ -208,8 +212,8 @@ fn repr_instance<'a>(
             // If there are scripts, we'll need to make a .meta.json folder
             let folder_path: Cow<'a, Path> = Cow::Owned(base.join(&child.name));
             let meta = MetaFile {
-                class_name: Some(child.class.clone()),
-                // properties: properties.into_iter().collect(),
+                class_name: Some(child.class.to_string()),
+                properties: None,
                 ignore_unknown_instances: true,
             };
 
@@ -253,7 +257,7 @@ impl<'a, I: InstructionReader + ?Sized> TreeIterator<'a, I> {
                     instructions.push(Instruction::AddToTree {
                         name: child.name.clone(),
                         partition: TreePartition {
-                            class_name: child.class.clone(),
+                            class_name: child.class.to_string(),
                             children: child
                                 .children()
                                 .iter()

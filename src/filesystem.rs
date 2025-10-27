@@ -76,7 +76,7 @@ impl InstructionReader for FileSystem {
                     partition.path = Some(PathBuf::from(SRC).join(path));
                 }
 
-                for mut child in partition.children.values_mut() {
+                for child in partition.children.values_mut() {
                     if let Some(path) = &child.path {
                         child.path = Some(PathBuf::from(SRC).join(path));
                     }
@@ -89,15 +89,11 @@ impl InstructionReader for FileSystem {
                 let mut file = File::create(self.source.join(&filename)).unwrap_or_else(|error| {
                     panic!("can't create file {:?}: {:?}", filename, error)
                 });
-                file.write_all(&contents).unwrap_or_else(|error| {
-                    panic!("can't write to file {:?} due to {:?}", filename, error)
-                });
+                file.write_all(&contents).expect("can't write file");
             }
 
             Instruction::CreateFolder { folder } => {
-                fs::create_dir_all(self.source.join(&folder)).unwrap_or_else(|error| {
-                    panic!("can't write to folder {:?}: {:?}", folder, error)
-                });
+                fs::create_dir_all(self.source.join(folder)).expect("can't write folder");
             }
         }
     }

@@ -48,9 +48,10 @@ pub(crate) struct MetaFile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub class_name: Option<String>,
 
-    // #[serde(rename = "properties")]
-    // #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    // pub properties: BTreeMap<String, RbxValue>,
+    #[serde(rename = "properties")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<BTreeMap<String, serde_json::Value>>,
+
     #[serde(rename = "ignoreUnknownInstances")]
     pub ignore_unknown_instances: bool,
 }
@@ -82,7 +83,7 @@ impl<'a> Instruction<'a> {
 
     pub fn partition(instance: &Instance, path: PathBuf) -> TreePartition {
         TreePartition {
-            class_name: instance.class.clone(),
+            class_name: instance.class.to_string(),
             children: BTreeMap::new(),
             ignore_unknown_instances: true,
             path: Some(path),
