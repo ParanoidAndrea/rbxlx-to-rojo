@@ -5,9 +5,10 @@ use rbx_dom_weak::{
 };
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     path::{Path, PathBuf},
 };
+use ustr::ustr;
 
 use structures::*;
 
@@ -16,6 +17,17 @@ pub mod structures;
 
 #[cfg(test)]
 mod tests;
+
+// Helper function to convert RunContext enum value to string
+fn run_context_to_string(value: u32) -> &'static str {
+    match value {
+        0 => "Legacy",
+        1 => "Server", 
+        2 => "Client",
+        3 => "Plugin",
+        _ => "Unknown",
+    }
+}
 
 lazy_static::lazy_static! {
     static ref NON_TREE_SERVICES: HashSet<&'static str> = include_str!("./non-tree-services.txt").lines().collect();
@@ -50,7 +62,7 @@ fn repr_instance<'a>(
                         contents: Cow::Owned(
                             serde_json::to_string_pretty(&MetaFile {
                                 class_name: None,
-                                properties: None,
+                                properties: BTreeMap::new(),
                                 ignore_unknown_instances: true,
                             })
                             .unwrap()
@@ -64,36 +76,77 @@ fn repr_instance<'a>(
         }
 
         "Script" | "LocalScript" | "ModuleScript" => {
-            // Simple class-based extension logic
-            let extension = if child.class == "ModuleScript" {
-                ""
+            // Check for RunContext property for Script instances
+            let run_context = if child.class == "Script" {
+                child.properties.get(&ustr("RunContext"))
+                    .and_then(|variant| match variant {
+                        Variant::Enum(value) => Some(value.to_u32()),
+                        _ => None,
+                    })
             } else {
-                match child.class.as_str() {
-                    "Script" => ".server",
-                    "LocalScript" => ".client",
-                    _ => ".server",
-                }
+                None
             };
 
-            let source = match child.properties.get(&Ustr::from("Source")).expect("no Source") {
+            let extension = match child.class.as_str() {
+                "Script" => ".server", // Always use .server for Script instances, RunContext preserved in meta.json
+                "LocalScript" => ".client",
+                "ModuleScript" => "",
+                _ => unreachable!(),
+            };
+
+            let source = match child.properties.get(&ustr("Source")).expect("no Source") {
                 Variant::String(value) => value,
                 _ => unreachable!(),
             }
             .as_bytes();
 
             if child.children().is_empty() {
-                Some((
-                    vec![Instruction::CreateFile {
-                        filename: Cow::Owned(base.join(format!("{}{}.luau", child.name, extension))),
-                        contents: Cow::Borrowed(source),
-                    }],
-                    Cow::Borrowed(base),
-                ))
+                let mut instructions = vec![Instruction::CreateFile {
+                    filename: Cow::Owned(base.join(format!("{}{}.luau", child.name, extension))),
+                    contents: Cow::Borrowed(source),
+                }];
+
+                // Create meta file for Script instances with RunContext
+                if child.class == "Script" && run_context.is_some() {
+                    let mut properties = BTreeMap::new();
+                    let run_context_string = run_context_to_string(run_context.unwrap());
+                    properties.insert("RunContext".to_string(), serde_json::Value::String(run_context_string.to_string()));
+                    
+                    let meta_contents = Cow::Owned(
+                        serde_json::to_string_pretty(&MetaFile {
+                            class_name: Some("Script".to_string()),
+                            properties,
+                            ignore_unknown_instances: true,
+                        })
+                        .expect("couldn't serialize meta")
+                        .as_bytes()
+                        .into(),
+                    );
+
+                    instructions.push(Instruction::CreateFile {
+                        filename: Cow::Owned(base.join(format!("{}.meta.json", child.name))),
+                        contents: meta_contents,
+                    });
+                }
+
+                Some((instructions, Cow::Borrowed(base)))
             } else {
+                let mut properties = BTreeMap::new();
+                
+                // Add RunContext for Script instances
+                if child.class == "Script" && run_context.is_some() {
+                    let run_context_string = run_context_to_string(run_context.unwrap());
+                    properties.insert("RunContext".to_string(), serde_json::Value::String(run_context_string.to_string()));
+                }
+
                 let meta_contents = Cow::Owned(
                     serde_json::to_string_pretty(&MetaFile {
-                        class_name: None,
-                        properties: None,
+                        class_name: if child.class == "Script" && run_context.is_some() {
+                            Some("Script".to_string())
+                        } else {
+                            None
+                        },
+                        properties,
                         ignore_unknown_instances: true,
                     })
                     .expect("couldn't serialize meta")
@@ -213,7 +266,7 @@ fn repr_instance<'a>(
             let folder_path: Cow<'a, Path> = Cow::Owned(base.join(&child.name));
             let meta = MetaFile {
                 class_name: Some(child.class.to_string()),
-                properties: None,
+                properties: BTreeMap::new(),
                 ignore_unknown_instances: true,
             };
 

@@ -49,7 +49,7 @@ impl FileSystem {
         let source = root.join(SRC);
         let project = Project::new();
 
-        fs::create_dir(&source).ok(); // It'll error later if it matters
+        fs::create_dir_all(&source).ok(); // Create src directory and any missing parent directories
 
         Self {
             project,
@@ -86,7 +86,14 @@ impl InstructionReader for FileSystem {
             }
 
             Instruction::CreateFile { filename, contents } => {
-                let mut file = File::create(self.source.join(&filename)).unwrap_or_else(|error| {
+                let file_path = self.source.join(&filename);
+                // Ensure parent directory exists
+                if let Some(parent) = file_path.parent() {
+                    fs::create_dir_all(parent).unwrap_or_else(|error| {
+                        panic!("can't create parent directory for {:?}: {:?}", filename, error)
+                    });
+                }
+                let mut file = File::create(file_path).unwrap_or_else(|error| {
                     panic!("can't create file {:?}: {:?}", filename, error)
                 });
                 file.write_all(&contents).expect("can't write file");

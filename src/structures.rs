@@ -49,9 +49,9 @@ pub(crate) struct MetaFile {
     pub class_name: Option<String>,
 
     #[serde(rename = "properties")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub properties: Option<BTreeMap<String, serde_json::Value>>,
-
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub properties: BTreeMap<String, serde_json::Value>,
+    
     #[serde(rename = "ignoreUnknownInstances")]
     pub ignore_unknown_instances: bool,
 }
