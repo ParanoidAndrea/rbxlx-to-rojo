@@ -1,7 +1,7 @@
 use log::debug;
 use rbx_dom_weak::{
     types::{Ref, Variant},
-    Instance, Ustr, WeakDom,
+    Instance, WeakDom,
 };
 use std::{
     borrow::Cow,
